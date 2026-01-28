@@ -15,7 +15,7 @@
 #   - strip out `_` prefixed modules and packages
 #   - enter each module into a mapping from module name to requirement name
 #
-# - Write a YAML format manifest file {manifest: {modules_mapping: <mapping>, pip_repository: <hub name>}, integrity: <integrity>}
+# - Write a YAML format manifest file {manifest: {modules_mapping: <mapping>, pip_repository: {name: <hub name>}}, integrity: <integrity>}
 
 import argparse
 import re
@@ -183,7 +183,8 @@ def write_manifest(module_mapping: dict[str, str],
 manifest:
   modules_mapping:
 {sorted_mapping}
-  pip_repository: {pip_repository_name}
+  pip_repository:
+    name: {pip_repository_name}
 integrity: "{integrity_value}"
 """
     
@@ -227,7 +228,15 @@ def main():
         default=Path('gazelle_manifest.yaml'),
         help="Path to write the final YAML manifest file."
     )
-    
+
+    # Name of the pip repository (hub) for Gazelle
+    parser.add_argument(
+        '--pip_repository_name',
+        type=str,
+        default='pypi',
+        help="Name of the pip_parse or pip_repository target for Gazelle."
+    )
+
     args = parser.parse_args()
 
     # 1. Read integrity value
@@ -275,7 +284,7 @@ def main():
         final_module_mapping.update(modules)
 
     # 4. Write the final manifest
-    write_manifest(final_module_mapping, integrity_value, args.output)
+    write_manifest(final_module_mapping, integrity_value, args.output, args.pip_repository_name)
 
 if __name__ == '__main__':
     main()

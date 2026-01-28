@@ -35,6 +35,8 @@ def _modules_mapping_impl(ctx):
             # "--integrity_file", attr.file.integrity.path,
             "--output",
             out.path,
+            "--pip_repository_name",
+            ctx.attr.pip_repository_name,
         ],
         inputs = [
             args_file,
@@ -56,6 +58,7 @@ _modules_mapping = rule(
     implementation = _modules_mapping_impl,
     attrs = {
         "wheels": attr.label_list(providers = [[DefaultInfo]]),
+        "pip_repository_name": attr.string(default = "pypi"),
         # "integrity": attr.label(allow_single_file = True),
         "_generator": attr.label(
             default = Label(":generator"),
@@ -95,6 +98,7 @@ def gazelle_python_manifest(name, hub, venvs = [], lockfile = None):
     _modules_mapping(
         name = name,
         wheels = whls,
+        pip_repository_name = hub,
     )
 
     dest = native.package_name()
