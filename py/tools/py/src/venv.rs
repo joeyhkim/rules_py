@@ -7,7 +7,7 @@ use miette::{miette, Context, IntoDiagnostic};
 use pathdiff::diff_paths;
 use sha256::try_digest;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     env::current_dir,
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, SeekFrom, Write},
@@ -747,6 +747,43 @@ impl<A: PthEntryHandler, B: PthEntryHandler> PthEntryHandler for StrategyWithBin
     }
 }
 
+/// Symlink .pyi type stubs into .pth roots that have matching .py files but
+/// lack the .pyi companion.  This ensures type checkers see both files
+/// co-located, which is required for proper stub resolution.
+fn colocate_pyi_stubs(pth_roots: &[PathBuf]) -> miette::Result<()> {
+    // Map: relative module path (e.g. "houstoncontrol/service/user_pb2.pyi")
+    //      -> absolute path to the .pyi file
+    let mut pyi_sources: HashMap<PathBuf, PathBuf> = HashMap::new();
+
+    for root in pth_roots {
+        for entry in WalkDir::new(root)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().map_or(false, |ext| ext == "pyi"))
+        {
+            if let Ok(rel) = entry.path().strip_prefix(root) {
+                pyi_sources
+                    .entry(rel.to_path_buf())
+                    .or_insert_with(|| entry.path().to_path_buf());
+            }
+        }
+    }
+
+    for (rel_pyi, pyi_abs) in &pyi_sources {
+        let rel_py = rel_pyi.with_extension("py");
+        for root in pth_roots {
+            let py_in_root = root.join(&rel_py);
+            let pyi_in_root = root.join(rel_pyi);
+            if py_in_root.exists() && !pyi_in_root.exists() {
+                let resolved = diff_paths(pyi_abs, pyi_in_root.parent().unwrap()).unwrap();
+                unix_fs::symlink(&resolved, &pyi_in_root).into_diagnostic()?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub fn populate_venv(
     venv: Virtualenv,
     pth_file: PthFile,
@@ -892,6 +929,23 @@ pub fn populate_venv(
         )
         .into_diagnostic()?;
 
+    // Collect .pth root paths before consuming the plan, so we can colocate
+    // .pyi stubs across roots after execution.
+    let pth_roots: Vec<PathBuf> = plan
+        .iter()
+        .filter_map(|cmd| match cmd {
+            Command::PthEntry { path } => {
+                let resolved = venv.site_dir.join(path);
+                if resolved.is_dir() {
+                    Some(resolved)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .collect();
+
     // The plan has now been uniq'd by destination, execute it
     for command in plan {
         match command {
@@ -930,6 +984,13 @@ pub fn populate_venv(
             }
         }
     }
+
+    // Colocate .pyi stubs: type checkers like basedpyright only pair .py and
+    // .pyi files when they are in the same directory.  When multiple .pth roots
+    // contribute to the same namespace package (e.g. _virtual_imports and
+    // grpc_pb), a .pyi stub may exist in one root but not the other.  Symlink
+    // any orphaned .pyi stubs into roots that have the matching .py.
+    colocate_pyi_stubs(&pth_roots)?;
 
     Ok(())
 }
