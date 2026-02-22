@@ -7,7 +7,7 @@ use miette::{miette, Context, IntoDiagnostic};
 use pathdiff::diff_paths;
 use sha256::try_digest;
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     env::current_dir,
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, SeekFrom, Write},
@@ -783,7 +783,7 @@ pub fn populate_venv(
         )?);
     }
 
-    let mut planned_destinations: HashMap<PathBuf, Vec<Command>> = HashMap::new();
+    let mut planned_destinations: BTreeMap<PathBuf, Vec<Command>> = BTreeMap::new();
     for command in &plan {
         match command {
             // Prevent commands from accidentally recursing into the venv, for
