@@ -1,3 +1,29 @@
+# Fork Changes (joeyhkim/rules_py)
+
+This is a fork of [aspect-build/rules_py](https://github.com/aspect-build/rules_py) with the following fixes:
+
+### 1. Gazelle manifest `pip_repository` format fix (`88097a4`)
+
+The upstream Gazelle Python plugin expects `pip_repository` in the manifest to be a nested object (`{ "name": "pypi" }`), but the generator emitted a plain string. This caused `cannot unmarshal !!str 'pypi' into manifest.PipRepository`. Also passes the hub name through from `gazelle_python_manifest` to the generator.
+
+**Files changed:** `gazelle/python/generate.go`, `gazelle/python/generate.py`, `gazelle/python/manifest/manifest.go`, `gazelle/python/manifest/manifest_test.go`, `py/private/py_venv/py_venv.bzl`
+
+### 2. Deterministic `.pth` ordering (`090b1ac`)
+
+Changed `HashMap` to `BTreeMap` in `venv.rs` for the planned destinations map so that `.pth` entries are written in sorted order. Non-deterministic ordering caused flaky IDE symbol resolution when multiple `.pth` roots contribute to the same namespace package.
+
+**Files changed:** `py/tools/py/src/venv.rs`
+
+### 3. Co-locate `.pyi` type stubs across `.pth` roots (`c8d4901`)
+
+Type checkers like basedpyright only pair `.py` and `.pyi` files when they are in the same directory. When `py_proto_library` generates `_virtual_imports/` directories (with both `.py` and `.pyi`) and `python_grpc_library` generates `grpc_pb/` directories (with `.py` copies but no `.pyi`), the type checker finds the `.py` without its stub and can't resolve protobuf message types.
+
+After the venv symlink is created, `link.py` now scans all `.pth` roots, finds `.pyi` stubs, and creates relative symlinks into any root that has a matching `.py` but lacks the `.pyi`. This uses `os.path.normpath()` for lexical path resolution (not `realpath`) so that relative `../` components navigate the runfiles symlink tree correctly.
+
+**Files changed:** `py/private/py_venv/link.py`
+
+---
+
 # Aspect's Bazel rules for Python
 
 `aspect_rules_py` is a layer on top of [rules_python](https://github.com/bazel-contrib/rules_python), the reference Python ruleset.
