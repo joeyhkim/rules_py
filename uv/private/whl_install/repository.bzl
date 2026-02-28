@@ -131,6 +131,19 @@ def _whl_install_impl(repository_ctx):
             "//conditions:default": str(repository_ctx.attr.sbuild),
         }
 
+    if not select_arms:
+        # No compatible wheels or source build for this platform (e.g. pywin32
+        # on Linux). Emit an empty py_library so dependents can still resolve.
+        content.append("""
+py_library(
+   name = "install",
+   srcs = [],
+   visibility = ["//visibility:public"],
+)
+""")
+        repository_ctx.file("BUILD.bazel", content = "\n".join(content))
+        return
+
     content.append(
         """
 select_chain(
